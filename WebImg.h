@@ -38,7 +38,7 @@ private:
 	string filestr;  //path to user's image
 	
 	const char* GetHTTP(string&);//this might need to return char*?
-	void retrieveImg(const char*);//uses GetHTTP()
+	void retrieveImg(const char*, int, SOCKET);//uses GetHTTP()
 
 	string stringFunc1(string&);
 	string stringFunc2(string&);

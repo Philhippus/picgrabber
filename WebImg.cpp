@@ -44,14 +44,12 @@ string WebImg::stringFunc2(string &hostnm)
 }
 
 
-void WebImg::retrieveImg(const char* longstr)
+void WebImg::retrieveImg(const char* longstr, int wsint, SOCKET Socket)
 {
 	//parse HTML, get image locations, retrieve image, opencv
 	
 	string htm(longstr);
 	delete[] longstr;
-	cout << htm << endl;
-	IplImage* img2;
 
 	smatch m; //regex match results
 	const regex r("https?.*(?:jpg|jpeg|png|bmp|JPEG|JPG|PNG|BMP|Jpg|Jpeg|Png|Bmp)");//check which are supported by IplImage
@@ -88,43 +86,60 @@ void WebImg::retrieveImg(const char* longstr)
 							str = ss.str();
 							PicNum = const_cast<char*>(str.c_str());
 
-							//assigning regex results to string
-							string newstring = m[i];
+									//collect the image data over network
+									string imgUrl = m[i];
+								   string szBuffer_s = "GET ";
+								   szBuffer_s += stringFunc2(imgUrl);//tail end of URL
+								   szBuffer_s += " HTTP/1.1";
+								   szBuffer_s +=  "\nHost: " ;
+								   szBuffer_s +=  stringFunc1(imgUrl);  //hostname
+								   szBuffer_s += " \r\nConnection: keep alive\r\n\r\n";
+   
+    
+							wsint = send(Socket, szBuffer_s.c_str(), szBuffer_s.length(), 0);
+							if (wsint == SOCKET_ERROR)
+							{
+								closesocket(Socket);	
+								throw SockError("send socket failed");
+							}
+							 std::cout << "Client message sent: \n\n" << szBuffer_s << std::endl;
+	
+							string Data;
+	
+							char szBuffer[256];//watch out for overflow
+							int array_int_copy = 0;
+	
+							while(1)
+							{
+								wsint = recv(Socket, szBuffer, 256, 0);
+								if (wsint == SOCKET_ERROR)
+								{
+									closesocket(Socket);
+									throw SockError("recv socket failed");
+								}
+
+								if (wsint == 0)
+									break;
+
+								//while(array_int_copy != wsint)
+								//{
+									Data.append(szBuffer);
+									//array_int_copy++;
+								//}		
+							}
+
+							 char* thedata = new char[Data.size()+1];
+							 strcpy(thedata, Data.c_str());
+
+							//assigning returned image data
 							IplImage* s = cvCreateImageHeader(size, depth, channels);//creating just the header because data is added next
-							s->imageData = const_cast<char*>(GetHTTP(newstring));//must return image data!
+							s->imageData = thedata;
 
 							//creating filenames out of incrementing int's
 							mtchimage[i].open(PicNum, ios::binary);
 							mtchimage[i] << s << endl;
-							
-						}
-
-		for (int i = 0; i < sizeof m; i++)
-		{ /* create a window */
-		cvNamedWindow(reinterpret_cast<const char*>(i), CV_WINDOW_AUTOSIZE );
-   
-		/* display the image */
-		cvShowImage( reinterpret_cast<const char*>(i), img2 ); 
-		}
-	
-		
-	
-	
-		for (int i = 0; i < sizeof m; i++)
-		{
-				cout << "press any key to close a window." << endl;
-				/* wait until user presses a key */
-				cvWaitKey(0);
-   
-				/* free memory */
-				cvDestroyWindow( reinterpret_cast<const char*>(i));
-				cvReleaseImage( &img2 );
-			} 
-			
 					}
-		
-		
-	
+			}
 			else throw SockError("no image matched by regex");
 		 }
 	catch(SockError &sockerr)
@@ -143,11 +158,7 @@ IplImage* WebImg::compare(double threshold, IplImage* imge )
 	WSACleanup();
 	cout << webpage << endl;
 	
-	retrieveImg(webpage);
-	WSACleanup();
 	
-
-
 	IplImage* img1 = cvLoadImage("mtchimage", CV_LOAD_IMAGE_COLOR);
 	if(img1 == nullptr)
 		match = false;
@@ -268,6 +279,8 @@ const char* WebImg::GetHTTP(string& svername)
 
 	 char* thedata = new char[Data.size()+1];
 	 strcpy(thedata, Data.c_str());
+
+	 retrieveImg(thedata, wsint, Socket);
 
 	 closesocket(Socket);
 	 return thedata;
