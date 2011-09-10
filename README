@@ -1,10 +1,12 @@
 So I thought it would be interesting to use winsock to extract the images off a webpage and store them in OpenCV's
 IplImage format all spruced and ready for processing.
 
-I've used TR1's regex to parse HTML for image links - and it works up to the point where the image is getting DL'ed, 
-then I get the 'connect failed' message from winsock - could be the regular expression's fault or something else.
+I've used TR1's regex to parse HTML for image links - and it works up to the point where the image is getting DL'ed.
+I may have some tweaking to do perhaps having to parse the image headers as it comes down the pipe.
 
-The code is a work in progress and some things are automated at the moment that you might not need. Like selecting
-an image of your own to bee compared by OpenCV - you might want to comment that out. Also there's a random travel 
-website that is connected to when the code runs - this was just for debugging purposes so that I didn't have to manually
-enter a URL each time.
+The code is a work in progress and some things are automated at the moment that you might not need; like selecting
+an image of your own to be compared by OpenCV - you might want to comment that out as there's no actual image processing
+coded in yet.
+
+Also there's a random travel website that is connected to when the code runs - this was just for debugging purposes so that
+I didn't have to manually enter a URL each time.
