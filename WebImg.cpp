@@ -49,7 +49,8 @@ void WebImg::retrieveImg(const char* longstr, int wsint, SOCKET Socket)
 	//parse HTML, get image locations, retrieve image, opencv
 	
 	string htm(longstr);
-	delete[] longstr;
+	
+	
 
 	smatch m; //regex match results
 	const regex r("https?.*(?:jpg|jpeg|png|bmp|JPEG|JPG|PNG|BMP|Jpg|Jpeg|Png|Bmp)");//check which are supported by IplImage
@@ -59,40 +60,41 @@ void WebImg::retrieveImg(const char* longstr, int wsint, SOCKET Socket)
 				
 			if(regex_search(htm,m,r))
 				{
-		
-					ofstream mtchimage[sizeof m];
+					cout << "images found" << endl;
+					ofstream* mtchimage = new ofstream[m.size()];//must use a dynamic array
 	
-					if(!mtchimage)
+					if(mtchimage==nullptr)
 					throw SockError("Error opening output file");
 
 					//arguments for cvCreateImageHeader
 					CvSize size;
 					size.height = 330;
 					size.width = 520;
-					int depth = 1;
-					int channels = 1;
+					int depth = IPL_DEPTH_8U;
+					int channels = 3;
 
 					//naming the image files in the loop					
 					string str;
 				    stringstream ss;
+					string imgUrl;
 		
 					
-					for(int i = 0; i < sizeof m; i++)
-						{
+					for(int i = 0; i < m.size(); i++)
+						{								
 							//incrementing stream to generate filenames
 							char* PicNum = "Pic number ";
 							ss.str("");
-							ss << PicNum << (i+1);
+							ss << PicNum << (i);
 							str = ss.str();
 							PicNum = const_cast<char*>(str.c_str());
 
-									//collect the image data over network
-									string imgUrl = m[i];
+								   //collect the image data over network
+								   imgUrl = m[i];									
 								   string szBuffer_s = "GET ";
-								   szBuffer_s += stringFunc2(imgUrl);//tail end of URL
+								   szBuffer_s += WebImg::stringFunc2(imgUrl);//tail end of URL
 								   szBuffer_s += " HTTP/1.1";
 								   szBuffer_s +=  "\nHost: " ;
-								   szBuffer_s +=  stringFunc1(imgUrl);  //hostname
+								   szBuffer_s += WebImg::stringFunc1(imgUrl);  //hostname
 								   szBuffer_s += " \r\nConnection: keep alive\r\n\r\n";
    
     
@@ -128,17 +130,20 @@ void WebImg::retrieveImg(const char* longstr, int wsint, SOCKET Socket)
 								//}		
 							}
 
-							 char* thedata = new char[Data.size()+1];
-							 strcpy(thedata, Data.c_str());
-
 							//assigning returned image data
 							IplImage* s = cvCreateImageHeader(size, depth, channels);//creating just the header because data is added next
-							s->imageData = thedata;
+							s->imageData = const_cast<char*>(Data.c_str());
+							
 
 							//creating filenames out of incrementing int's
 							mtchimage[i].open(PicNum, ios::binary);
-							mtchimage[i] << s << endl;
+							mtchimage[i].write((char*)(&s), sizeof s);
+							mtchimage[i].close();
+
+							
 					}
+					delete[] mtchimage;
+				
 			}
 			else throw SockError("no image matched by regex");
 		 }
@@ -156,7 +161,6 @@ IplImage* WebImg::compare(double threshold, IplImage* imge )
 
 	const char* webpage = GetHTTP(servername);//returns heap data.
 	WSACleanup();
-	cout << webpage << endl;
 	
 	
 	IplImage* img1 = cvLoadImage("mtchimage", CV_LOAD_IMAGE_COLOR);
@@ -277,13 +281,11 @@ const char* WebImg::GetHTTP(string& svername)
 		//}		
 	}
 
-	 char* thedata = new char[Data.size()+1];
-	 strcpy(thedata, Data.c_str());
+	 
 
-	 retrieveImg(thedata, wsint, Socket);
+	retrieveImg(Data.c_str(), wsint, Socket);
 
 	 closesocket(Socket);
-	 return thedata;
 	
 	}
 	
