@@ -46,56 +46,112 @@ string WebImg::stringFunc2(string &hostnm)
 
 void WebImg::retrieveImg(const char* longstr, int wsint, SOCKET Socket)
 {
+	//TODO: correct regex_search iterator, reconnect sockets after recv() has returned 0
+
 	//parse HTML, get image locations, retrieve image, opencv
 	
-	string htm(longstr);
-	
-	
+	string htm(longstr), htm1;
+	string::const_iterator begin;
+	string::const_iterator end;
+
+	//create file and write html
+	ofstream htmfile;
+	char* htf = "htmfile";
+	htmfile.open(htf);
+	htmfile.write(htm.c_str(), htm.size());
+
+	ifstream istr(htf);
+	if (!istr)
+		throw SockError("file not opened for input");
 
 	smatch m; //regex match results
-	const regex r("https?.*(?:jpg|jpeg|png|bmp|JPEG|JPG|PNG|BMP|Jpg|Jpeg|Png|Bmp)");//check which are supported by IplImage
+	const regex r("https?.*(?:jpg|jpeg|png|bmp|gif|JPEG|JPG|PNG|BMP|GIF|Jpg|Jpeg|Png|Bmp|Gif)");//check which are supported by IplImage
 	
 	try
 		{
-				
-			if(regex_search(htm,m,r))
-				{
-					cout << "images found" << endl;
-					ofstream* mtchimage = new ofstream[m.size()];//must use a dynamic array
-	
-					if(mtchimage==nullptr)
-					throw SockError("Error opening output file");
-
-					//arguments for cvCreateImageHeader
-					CvSize size;
-					size.height = 330;
-					size.width = 520;
-					int depth = IPL_DEPTH_8U;
-					int channels = 3;
-
-					//naming the image files in the loop					
-					string str;
-				    stringstream ss;
-					string imgUrl;
-		
+			while(! istr.eof())
+			{
+				getline(istr, htm1, '\n'); //htm1 is overwritten at each iteration
+				begin = htm1.begin();
+				end = htm1.end();
+							
+			
+				if (regex_search(begin, end, m, r))
+					{
+						string imgUrl (m[0].first, m[0].second); 
 					
-					for(int i = 0; i < m.size(); i++)
-						{								
+						//collect the image data over network
+						struct hostent* pHent = NULL;
+
+	//if( Address.sin_addr.s_addr == INADDR_ANY)
+		string hstr = stringFunc1(imgUrl);
+		 pHent = gethostbyname(hstr.c_str());
+	
+	if(pHent == NULL)
+		{
+			int lasterr = WSAGetLastError();
+			cout << "pHent error code " << lasterr << endl;
+			throw SockError("pHent error");
+		}
+
+	SOCKET Socket;
+
+	Socket = socket(AF_INET,SOCK_STREAM,0);
+	if(Socket == INVALID_SOCKET)
+		throw SockError("Socket failed");
+
+	struct servent* pSent = NULL;
+	sockaddr_in saServer;
+
+	pSent = getservbyname("http","tcp");
+
+	if (pSent == NULL)
+		saServer.sin_port = htons(80);
+	else
+		saServer.sin_port = pSent->s_port;
+
+	saServer.sin_family = AF_INET;
+	saServer.sin_addr = *((LPIN_ADDR) *pHent -> h_addr_list);
+
+	wsint = connect(Socket, (LPSOCKADDR)&saServer, sizeof(SOCKADDR_IN));
+	if (wsint == SOCKET_ERROR)
+	{
+		closesocket(Socket);
+		throw SockError ("Connect failed");
+	}
+								   									
+						string szBuffer_s = "GET ";
+						szBuffer_s += WebImg::stringFunc2(imgUrl);//tail end of URL
+						szBuffer_s += " HTTP/1.1";
+						szBuffer_s +=  "\nHost: " ;
+						szBuffer_s += WebImg::stringFunc1(imgUrl);  //hostname
+						szBuffer_s += " \r\nConnection: keep alive\r\n\r\n";	
+				
+						ofstream mtchimage;
+	
+						if(!mtchimage)
+						throw SockError("Error opening output file");
+
+						//arguments for cvCreateImageHeader
+						CvSize size;
+						size.height = 330;
+						size.width = 520;
+						int depth = IPL_DEPTH_8U;
+						int channels = 3;
+
+						//naming the image files in the loop					
+						string str;
+					    stringstream ss;
+					
 							//incrementing stream to generate filenames
+							static int i = 1;
 							char* PicNum = "Pic number ";
 							ss.str("");
-							ss << PicNum << (i);
+							ss << PicNum << (i++);
 							str = ss.str();
 							PicNum = const_cast<char*>(str.c_str());
 
-								   //collect the image data over network
-								   imgUrl = m[i];									
-								   string szBuffer_s = "GET ";
-								   szBuffer_s += WebImg::stringFunc2(imgUrl);//tail end of URL
-								   szBuffer_s += " HTTP/1.1";
-								   szBuffer_s +=  "\nHost: " ;
-								   szBuffer_s += WebImg::stringFunc1(imgUrl);  //hostname
-								   szBuffer_s += " \r\nConnection: keep alive\r\n\r\n";
+								  
    
     
 							wsint = send(Socket, szBuffer_s.c_str(), szBuffer_s.length(), 0);
@@ -109,9 +165,8 @@ void WebImg::retrieveImg(const char* longstr, int wsint, SOCKET Socket)
 							string Data;
 	
 							char szBuffer[256];//watch out for overflow
-							int array_int_copy = 0;
 	
-							while(1)
+							while(wsint)
 							{
 								wsint = recv(Socket, szBuffer, 256, 0);
 								if (wsint == SOCKET_ERROR)
@@ -120,33 +175,24 @@ void WebImg::retrieveImg(const char* longstr, int wsint, SOCKET Socket)
 									throw SockError("recv socket failed");
 								}
 
-								if (wsint == 0)
-									break;
-
-								//while(array_int_copy != wsint)
-								//{
-									Data.append(szBuffer);
-									//array_int_copy++;
-								//}		
+								Data.append(szBuffer);									
 							}
-
+							
 							//assigning returned image data
 							IplImage* s = cvCreateImageHeader(size, depth, channels);//creating just the header because data is added next
 							s->imageData = const_cast<char*>(Data.c_str());
 							
 
 							//creating filenames out of incrementing int's
-							mtchimage[i].open(PicNum, ios::binary);
-							mtchimage[i].write((char*)(&s), sizeof s);
-							mtchimage[i].close();
+							mtchimage.open(PicNum, ios::binary);
+							mtchimage.write(s->imageData, Data.length() );
+							mtchimage.close();
 
-							
-					}
-					delete[] mtchimage;
+							//begin = m[0].second;
 				
 			}
-			else throw SockError("no image matched by regex");
-		 }
+		}	
+	}
 	catch(SockError &sockerr)
 			{
 				cerr << sockerr.what() << endl;
@@ -281,8 +327,7 @@ const char* WebImg::GetHTTP(string& svername)
 		//}		
 	}
 
-	 
-
+	
 	retrieveImg(Data.c_str(), wsint, Socket);
 
 	 closesocket(Socket);
