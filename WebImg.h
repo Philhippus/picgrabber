@@ -27,19 +27,15 @@ class WebImg
 {
 public:
 	WebImg(){}
-	WebImg (string srvrname, string flstr)
-		:servername(srvrname),filestr(flstr){}
+	explicit WebImg (string srvrname):servername(srvrname){}
 	~WebImg(){}
 	
-	IplImage* compare(double, IplImage*);//uses retrieveImg
+	void retrieveImg();//uses GetHTTP()
 
 private:
 	string servername;
-	string filestr;  //path to user's image
+	string GetHTTP();//this might need to return char*?
 	
-	const char* GetHTTP(string&);//this might need to return char*?
-	void retrieveImg(const char*, int, SOCKET);//uses GetHTTP()
-
 	string stringFunc1(string&);
 	string stringFunc2(string&);
 	
