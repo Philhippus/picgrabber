@@ -4,62 +4,33 @@ using std::cout;
 using std::endl;
 using std::cin;
 using std::string;
-//TODO string manipulation to format retrieved files to fit into GET command.
 
 int main()
 {
-	string webpic = "http://www.places-to-visit.us/category/Egypt.html"; 
-	string path = "IMG6.jpg";
-	IplImage* img;//, *img2;
-	
-	cout << "Select your image: ";
-	//getline(cin, path);
+	char exit;
 
-	img = cvLoadImage(path.c_str(), CV_LOAD_IMAGE_COLOR);
-	cvNamedWindow("chosen", CV_WINDOW_AUTOSIZE);
-	cvShowImage("chosen", img);
-
-	double thresh = 0.0;
-	/*cout << "Set threshold: ";
-	cin >> thresh;*/
-
-//set up the comparator
-	WebImg C(webpic, path);
-	WebImg* Cp = &C;
-
-	
-	
-	//char* image[4] = {"image1","image2","image3","image4"};
-	
-	//save images that match
-	
-		/*img2 = */Cp->compare(thresh, img);
-		//if(img2 == nullptr)
+	do
+	{
+		string webpic = "http://www.places-to-visit.us/category/Egypt.html"; 
 		
-			//cout << "Compare call failed"<<  endl;
-		
-
-
+		WebImg C(webpic);
 	
+		C.retrieveImg();
 
+		IplImage* img1 = cvLoadImage("Pic number 4", CV_LOAD_IMAGE_COLOR);
+		cvNamedWindow("chosen1", CV_WINDOW_AUTOSIZE);
+		cvShowImage("chosen1", img1);
+		
+		cout << "Enter 'x' to exit: ";
+		cin >> exit;
+
+	}
+	while(exit != 'x');
+		
 	return 0;
 }
 
 
-
-
-
-/*
-	Img a(imgPath); //single arg object has to be created before variables
-	int BufSize = a.getSize(imgPath);
-	Img b(BufSize,imgPath);
-
-	//storage for comparator image
-	imgPath = "path_to_comparator";
-	Img One(imgPath);
-	BufSize = One.imgStore(imgPath);//One.getSize(imgPath);
-	Img Two(BufSize, imgPath);
-	*/
 /*GUI commands
 
 Window management
