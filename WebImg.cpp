@@ -4,29 +4,29 @@
 //this function takes the full url and shortens it to just the hostname.
 string WebImg::stringFunc1(string &hostnm)
 {
-   string url1 = hostnm;
-   string ht = "http://";
-   string hts = "https://";
-   string slash = "/";
+	string url1 = hostnm;
+	string ht = "http://";
+	string hts = "https://";
+	string slash = "/";
 
-   unsigned pos = url1.find(ht,0);
+	unsigned pos = url1.find(ht,0);
 
-   if (pos != string::npos)
-   url1.erase(0,7);
-   else if (pos == string::npos)
-   {
-      pos = url1.find(hts,0);
+	if (pos != string::npos)
+		url1.erase(0,7);
+	else if (pos == string::npos)
+	{
+		pos = url1.find(hts,0);
 
-      if (pos != string::npos)
-      url1.erase(0,8);
-   }
+		if (pos != string::npos)
+			url1.erase(0,8);
+	}
 
-  
-   pos = url1.find(slash,0);
-   if (pos != string::npos)
-   url1.erase(pos, url1.size());
 
-   return url1;
+	pos = url1.find(slash,0);
+	if (pos != string::npos)
+		url1.erase(pos, url1.size());
+
+	return url1;
 }
 
 //takes full url and returns the tail end
@@ -44,296 +44,237 @@ string WebImg::stringFunc2(string &hostnm)
 }
 
 
-void WebImg::retrieveImg(const char* longstr, int wsint, SOCKET Socket)
+void WebImg::retrieveImg()
 {
-	//TODO: correct regex_search iterator, reconnect sockets after recv() has returned 0
-
-	//parse HTML, get image locations, retrieve image, opencv
-	
-	string htm(longstr), htm1;
+	string htm = WebImg::GetHTTP();
+	string htm1;
 	string::const_iterator begin;
 	string::const_iterator end;
 
-	//create file and write html
-	ofstream htmfile;
-	char* htf = "htmfile";
-	htmfile.open(htf);
-	htmfile.write(htm.c_str(), htm.size());
-
-	ifstream istr(htf);
-	if (!istr)
-		throw SockError("file not opened for input");
+	//create stream and write html
+	stringstream htmstream;
 
 	smatch m; //regex match results
-	const regex r("https?.*(?:jpg|jpeg|png|bmp|gif|JPEG|JPG|PNG|BMP|GIF|Jpg|Jpeg|Png|Bmp|Gif)");//check which are supported by IplImage
-	
+	const regex r("https?.*(?:jpg|jpeg|png|bmp|gif|JPEG|JPG|PNG|BMP|GIF|Jpg|Jpeg|Png|Bmp|Gif)");
+
 	try
+	{
+		while(htmstream << htm)
 		{
-			while(! istr.eof())
+			getline(htmstream, htm1, '\n'); //htm1 is overwritten at each iteration
+			begin = htm1.begin();
+			end = htm1.end();
+
+			if (regex_search(begin, end, m, r))				
 			{
-				getline(istr, htm1, '\n'); //htm1 is overwritten at each iteration
-				begin = htm1.begin();
-				end = htm1.end();
-							
-			
-				if (regex_search(begin, end, m, r))
+				string imgUrl (m[0].first, m[0].second); 
+				cout << imgUrl << endl;
+
+				//collect the image data over network
+				struct hostent* pHent = NULL;
+
+				//if( Address.sin_addr.s_addr == INADDR_ANY)
+				string hstr = stringFunc1(imgUrl);
+				pHent = gethostbyname(hstr.c_str());
+
+				if(pHent == NULL)
+				{
+					int lasterr = WSAGetLastError();
+					cout << "pHent error code " << lasterr << endl;
+					throw SockError("pHent error");
+				}
+
+				SOCKET Socket = socket(AF_INET,SOCK_STREAM,0);
+				if(Socket == INVALID_SOCKET)
+					throw SockError("Socket failed");
+
+				struct servent* pSent = NULL;
+				sockaddr_in saServer;
+
+				pSent = getservbyname("http","tcp");
+
+				if (pSent == NULL)
+					saServer.sin_port = htons(80);
+				else
+					saServer.sin_port = pSent->s_port;
+
+				saServer.sin_family = AF_INET;
+				saServer.sin_addr = *((LPIN_ADDR) *pHent -> h_addr_list);
+
+				int wsint = connect(Socket, (LPSOCKADDR)&saServer, sizeof(SOCKADDR_IN));
+				if (wsint == SOCKET_ERROR)
+				{
+					closesocket(Socket);
+					throw SockError ("Connect failed");
+				}
+
+				string szBuffer_s = "GET ";
+				szBuffer_s += WebImg::stringFunc2(imgUrl);//tail end of URL
+				szBuffer_s += " HTTP/1.1";
+				szBuffer_s +=  "\nHost: " ;
+				szBuffer_s += WebImg::stringFunc1(imgUrl);  //hostname
+				szBuffer_s += " \r\nConnection: keep alive\r\n\r\n";	
+
+				ofstream mtchimage;
+
+				if(!mtchimage)
+					throw SockError("Error opening output stream");
+
+				//naming the image files in the loop					
+				string str;
+				stringstream ss;
+
+				//incrementing stream to generate filenames
+				static int i = 1;
+				char* PicNum = "Pic number ";
+				ss.str("");
+				ss << PicNum << (i++);
+				str = ss.str();
+				PicNum = const_cast<char*>(str.c_str());
+
+				wsint = send(Socket, szBuffer_s.c_str(), szBuffer_s.length(), 0);
+				if (wsint == SOCKET_ERROR)
+				{
+					closesocket(Socket);	
+					throw SockError("send socket failed");
+				}
+				std::cout << "Client message sent: \n\n" << szBuffer_s << std::endl;
+
+				string Data;
+
+				char szBuffer[256];//watch out for overflow
+
+				while(wsint)
+				{
+					wsint = recv(Socket, szBuffer, 256, 0);
+					if (wsint == SOCKET_ERROR)
 					{
-						string imgUrl (m[0].first, m[0].second); 
-					
-						//collect the image data over network
-						struct hostent* pHent = NULL;
+						closesocket(Socket);
+						throw SockError("recv socket failed");
+					}
 
-	//if( Address.sin_addr.s_addr == INADDR_ANY)
-		string hstr = stringFunc1(imgUrl);
-		 pHent = gethostbyname(hstr.c_str());
-	
-	if(pHent == NULL)
-		{
-			int lasterr = WSAGetLastError();
-			cout << "pHent error code " << lasterr << endl;
-			throw SockError("pHent error");
-		}
+					Data.append(szBuffer);									
+				}
 
-	SOCKET Socket;
+				//TODO parse the image header, concatenate file type to Picnum
+				//remove HTML header
 
-	Socket = socket(AF_INET,SOCK_STREAM,0);
-	if(Socket == INVALID_SOCKET)
-		throw SockError("Socket failed");
+				//creating filenames out of incrementing int's
+				mtchimage.open(PicNum, ios::out|ios::binary);
+				mtchimage.write(Data.c_str(), Data.length() );
+				mtchimage.close();
 
-	struct servent* pSent = NULL;
-	sockaddr_in saServer;
+			}//end if
+		}//end while	
+	}//end try
 
-	pSent = getservbyname("http","tcp");
-
-	if (pSent == NULL)
-		saServer.sin_port = htons(80);
-	else
-		saServer.sin_port = pSent->s_port;
-
-	saServer.sin_family = AF_INET;
-	saServer.sin_addr = *((LPIN_ADDR) *pHent -> h_addr_list);
-
-	wsint = connect(Socket, (LPSOCKADDR)&saServer, sizeof(SOCKADDR_IN));
-	if (wsint == SOCKET_ERROR)
-	{
-		closesocket(Socket);
-		throw SockError ("Connect failed");
-	}
-								   									
-						string szBuffer_s = "GET ";
-						szBuffer_s += WebImg::stringFunc2(imgUrl);//tail end of URL
-						szBuffer_s += " HTTP/1.1";
-						szBuffer_s +=  "\nHost: " ;
-						szBuffer_s += WebImg::stringFunc1(imgUrl);  //hostname
-						szBuffer_s += " \r\nConnection: keep alive\r\n\r\n";	
-				
-						ofstream mtchimage;
-	
-						if(!mtchimage)
-						throw SockError("Error opening output file");
-
-						//arguments for cvCreateImageHeader
-						CvSize size;
-						size.height = 330;
-						size.width = 520;
-						int depth = IPL_DEPTH_8U;
-						int channels = 3;
-
-						//naming the image files in the loop					
-						string str;
-					    stringstream ss;
-					
-							//incrementing stream to generate filenames
-							static int i = 1;
-							char* PicNum = "Pic number ";
-							ss.str("");
-							ss << PicNum << (i++);
-							str = ss.str();
-							PicNum = const_cast<char*>(str.c_str());
-
-								  
-   
-    
-							wsint = send(Socket, szBuffer_s.c_str(), szBuffer_s.length(), 0);
-							if (wsint == SOCKET_ERROR)
-							{
-								closesocket(Socket);	
-								throw SockError("send socket failed");
-							}
-							 std::cout << "Client message sent: \n\n" << szBuffer_s << std::endl;
-	
-							string Data;
-	
-							char szBuffer[256];//watch out for overflow
-	
-							while(wsint)
-							{
-								wsint = recv(Socket, szBuffer, 256, 0);
-								if (wsint == SOCKET_ERROR)
-								{
-									closesocket(Socket);
-									throw SockError("recv socket failed");
-								}
-
-								Data.append(szBuffer);									
-							}
-							
-							//assigning returned image data
-							IplImage* s = cvCreateImageHeader(size, depth, channels);//creating just the header because data is added next
-							s->imageData = const_cast<char*>(Data.c_str());
-							
-
-							//creating filenames out of incrementing int's
-							mtchimage.open(PicNum, ios::binary);
-							mtchimage.write(s->imageData, Data.length() );
-							mtchimage.close();
-
-							//begin = m[0].second;
-				
-			}
-		}	
-	}
 	catch(SockError &sockerr)
-			{
-				cerr << sockerr.what() << endl;
-			}
-					
+	{
+		cerr << sockerr.what() << endl;
+	}
+
 }
 
 
-IplImage* WebImg::compare(double threshold, IplImage* imge )
-{	
-	bool match = true;
-
-	const char* webpage = GetHTTP(servername);//returns heap data.
-	WSACleanup();
-	
-	
-	IplImage* img1 = cvLoadImage("mtchimage", CV_LOAD_IMAGE_COLOR);
-	if(img1 == nullptr)
-		match = false;
-	/*double l2_norm = cvNorm(imge,img1);
-	if (l2_norm <= threshold)
-		match = false;*/
-	
-	if(match == true)
-		return img1;
-	else return nullptr;
-
-	
-}
-
-const char* WebImg::GetHTTP(string& svername)
+string WebImg::GetHTTP()
 {
-	
 	try
 	{
-	
-	//Initialise Winsock with call to WSAStartup
-	WSADATA wsaData;
-	
-	int wsint = WSAStartup(MAKEWORD(2,0), &wsaData);
 
-	if(wsint != 0)
-	{
-		WSACleanup();
-		throw SockError("WSAStartup failed");
-	}
-	
-	struct sockaddr_in Address;
-	memset(&Address, 0, sizeof (Address));
-	Address.sin_family = AF_INET;
-    Address.sin_addr.s_addr = INADDR_ANY;
-	Address.sin_port = htons(80);
-    
+		//Initialise Winsock with call to WSAStartup
+		WSADATA wsaData;
 
-	struct hostent* pHent = NULL;
+		int wsint = WSAStartup(MAKEWORD(2,0), &wsaData);
 
-	//if( Address.sin_addr.s_addr == INADDR_ANY)
-		string hstr = stringFunc1(svername);
-		 pHent = gethostbyname(hstr.c_str());
-	
-	if(pHent == NULL)
+		if(wsint != 0)
+		{
+			WSACleanup();
+			throw SockError("WSAStartup failed");
+		}
+
+		struct sockaddr_in Address;
+		memset(&Address, 0, sizeof (Address));
+		Address.sin_family = AF_INET;
+		Address.sin_addr.s_addr = INADDR_ANY;
+		Address.sin_port = htons(80);
+
+
+		struct hostent* pHent = NULL;
+
+		//if( Address.sin_addr.s_addr == INADDR_ANY)
+		string hstr = stringFunc1(WebImg::servername);
+		pHent = gethostbyname(hstr.c_str());
+
+		if(pHent == NULL)
 		{
 			int lasterr = WSAGetLastError();
 			cout << "pHent error code " << lasterr << endl;
 			throw SockError("pHent error");
 		}
 
-	SOCKET Socket;
+		SOCKET Socket = socket(AF_INET,SOCK_STREAM,0);
+		if(Socket == INVALID_SOCKET)
+			throw SockError("Socket failed");
 
-	Socket = socket(AF_INET,SOCK_STREAM,0);
-	if(Socket == INVALID_SOCKET)
-		throw SockError("Socket failed");
+		struct servent* pSent = NULL;
+		sockaddr_in saServer;
 
-	struct servent* pSent = NULL;
-	sockaddr_in saServer;
+		pSent = getservbyname("http","tcp");
 
-	pSent = getservbyname("http","tcp");
+		if (pSent == NULL)
+			saServer.sin_port = htons(80);
+		else
+			saServer.sin_port = pSent->s_port;
 
-	if (pSent == NULL)
-		saServer.sin_port = htons(80);
-	else
-		saServer.sin_port = pSent->s_port;
+		saServer.sin_family = AF_INET;
+		saServer.sin_addr = *((LPIN_ADDR) *pHent -> h_addr_list);
 
-	saServer.sin_family = AF_INET;
-	saServer.sin_addr = *((LPIN_ADDR) *pHent -> h_addr_list);
-
-	wsint = connect(Socket, (LPSOCKADDR)&saServer, sizeof(SOCKADDR_IN));
-	if (wsint == SOCKET_ERROR)
-	{
-		closesocket(Socket);
-		throw SockError ("Connect failed");
-	}
-
-	
-		   string szBuffer_s = "GET ";
-	       szBuffer_s += stringFunc2(svername);//tail end of URL
-		   szBuffer_s += " HTTP/1.1";
-           szBuffer_s +=  "\nHost: " ;
-           szBuffer_s +=  hstr;  //hostname
-		   szBuffer_s += " \r\nConnection: keep alive\r\n\r\n";
-   
-    
-	wsint = send(Socket, szBuffer_s.c_str(), szBuffer_s.length(), 0);
-	if (wsint == SOCKET_ERROR)
-	{
-		closesocket(Socket);	
-		throw SockError("send socket failed");
-	}
-	 std::cout << "Client message sent: \n\n" << szBuffer_s << std::endl;
-	
-	string Data;
-	
-	char szBuffer[256];
-	int array_int_copy = 0;
-	
-	while(1)
-	{
-		wsint = recv(Socket, szBuffer, 256, 0);
+		wsint = connect(Socket, (LPSOCKADDR)&saServer, sizeof(SOCKADDR_IN));
 		if (wsint == SOCKET_ERROR)
 		{
-            closesocket(Socket);
-			throw SockError("recv socket failed");
+			closesocket(Socket);
+			throw SockError ("Connect failed");
 		}
 
-		if (wsint == 0)
-			break;
 
-		//while(array_int_copy != wsint)
-		//{
-			Data.append(szBuffer);
-			//array_int_copy++;
-		//}		
+		string szBuffer_s = "GET ";
+		szBuffer_s += stringFunc2(WebImg::servername);//tail end of URL
+		szBuffer_s += " HTTP/1.1";
+		szBuffer_s +=  "\nHost: " ;
+		szBuffer_s +=  hstr;  //hostname
+		szBuffer_s += " \r\nConnection: keep alive\r\n\r\n";
+
+
+		wsint = send(Socket, szBuffer_s.c_str(), szBuffer_s.length(), 0);
+		if (wsint == SOCKET_ERROR)
+		{
+			closesocket(Socket);	
+			throw SockError("send socket failed");
+		}
+		std::cout << "Client message sent: \n\n" << szBuffer_s << std::endl;
+
+		string Data;
+
+		char szBuffer[256];
+		int array_int_copy = 0;
+
+		wsint = 1;
+		while(wsint)
+		{
+			wsint = recv(Socket, szBuffer, 256, 0);
+			if (wsint == SOCKET_ERROR)
+			{
+				closesocket(Socket);
+				throw SockError("recv socket failed");
+			}
+
+			Data.append(szBuffer);		
+		}
+		
+		return Data;
+		
 	}
 
-	
-	retrieveImg(Data.c_str(), wsint, Socket);
-
-	 closesocket(Socket);
-	
-	}
-	
 	catch(SockError &sockerr)
 	{
 		cerr << sockerr.what() << endl;
