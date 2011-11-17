@@ -34,7 +34,7 @@ public:
 
 private:
 	string servername;
-	string GetHTTP();//this might need to return char*?
+	string GetHTTP(SOCKET&, hostent*, sockaddr_in&);//this might need to return char*?
 	
 	string stringFunc1(string&);
 	string stringFunc2(string&);

@@ -46,7 +46,16 @@ string WebImg::stringFunc2(string &hostnm)
 
 void WebImg::retrieveImg()
 {
-	string htm = WebImg::GetHTTP();
+	SOCKET Socket;
+	struct hostent* pHent;
+	unsigned long addr = 0;
+	sockaddr_in saServer;
+	memset((char *) &saServer, 0, sizeof(saServer));
+	saServer.sin_family = AF_INET;
+	saServer.sin_addr.s_addr = INADDR_ANY ;
+	saServer.sin_port = htons(80);
+
+	string htm = WebImg::GetHTTP(Socket, pHent, saServer);
 	string htm1;
 	string::const_iterator begin;
 	string::const_iterator end;
@@ -59,6 +68,7 @@ void WebImg::retrieveImg()
 
 	try
 	{
+		
 		while(htmstream << htm)
 		{
 			getline(htmstream, htm1, '\n'); //htm1 is overwritten at each iteration
@@ -70,9 +80,6 @@ void WebImg::retrieveImg()
 				string imgUrl (m[0].first, m[0].second); 
 				cout << imgUrl << endl;
 
-				//collect the image data over network
-				struct hostent* pHent = NULL;
-
 				//if( Address.sin_addr.s_addr == INADDR_ANY)
 				string hstr = stringFunc1(imgUrl);
 				pHent = gethostbyname(hstr.c_str());
@@ -83,25 +90,13 @@ void WebImg::retrieveImg()
 					cout << "pHent error code " << lasterr << endl;
 					throw SockError("pHent error");
 				}
+				memcpy((char *) &saServer.sin_addr, pHent->h_addr, pHent->h_length);
 
-				SOCKET Socket = socket(AF_INET,SOCK_STREAM,0);
+				Socket = socket(AF_INET,SOCK_STREAM,0);
 				if(Socket == INVALID_SOCKET)
-					throw SockError("Socket failed");
+					throw SockError("Socket failed");				
 
-				struct servent* pSent = NULL;
-				sockaddr_in saServer;
-
-				pSent = getservbyname("http","tcp");
-
-				if (pSent == NULL)
-					saServer.sin_port = htons(80);
-				else
-					saServer.sin_port = pSent->s_port;
-
-				saServer.sin_family = AF_INET;
-				saServer.sin_addr = *((LPIN_ADDR) *pHent -> h_addr_list);
-
-				int wsint = connect(Socket, (LPSOCKADDR)&saServer, sizeof(SOCKADDR_IN));
+				int wsint = connect(Socket, (LPSOCKADDR)&saServer, sizeof(saServer));
 				if (wsint == SOCKET_ERROR)
 				{
 					closesocket(Socket);
@@ -142,18 +137,17 @@ void WebImg::retrieveImg()
 
 				string Data;
 
-				char szBuffer[256];//watch out for overflow
+				char szBuffer[4096];//watch out for overflow
 
-				while(wsint)
+				while(wsint = recv(Socket, szBuffer, 4096, 0))
 				{
-					wsint = recv(Socket, szBuffer, 256, 0);
 					if (wsint == SOCKET_ERROR)
 					{
 						closesocket(Socket);
 						throw SockError("recv socket failed");
 					}
 
-					Data.append(szBuffer);									
+					Data.append(szBuffer, 4096);									
 				}
 
 				//TODO parse the image header, concatenate file type to Picnum
@@ -165,7 +159,9 @@ void WebImg::retrieveImg()
 				mtchimage.close();
 
 			}//end if
-		}//end while	
+		}//end while
+		closesocket(Socket);
+		WSACleanup();
 	}//end try
 
 	catch(SockError &sockerr)
@@ -176,7 +172,7 @@ void WebImg::retrieveImg()
 }
 
 
-string WebImg::GetHTTP()
+string WebImg::GetHTTP(SOCKET& Socket, hostent* pHent, sockaddr_in& saServer)
 {
 	try
 	{
@@ -192,14 +188,11 @@ string WebImg::GetHTTP()
 			throw SockError("WSAStartup failed");
 		}
 
-		struct sockaddr_in Address;
+		sockaddr_in Address;
 		memset(&Address, 0, sizeof (Address));
 		Address.sin_family = AF_INET;
 		Address.sin_addr.s_addr = INADDR_ANY;
 		Address.sin_port = htons(80);
-
-
-		struct hostent* pHent = NULL;
 
 		//if( Address.sin_addr.s_addr == INADDR_ANY)
 		string hstr = stringFunc1(WebImg::servername);
@@ -212,24 +205,13 @@ string WebImg::GetHTTP()
 			throw SockError("pHent error");
 		}
 
-		SOCKET Socket = socket(AF_INET,SOCK_STREAM,0);
+		memcpy((char *) &saServer.sin_addr, pHent->h_addr, pHent->h_length);
+
+		Socket = socket(AF_INET,SOCK_STREAM,0);
 		if(Socket == INVALID_SOCKET)
-			throw SockError("Socket failed");
+			throw SockError("Socket failed");				
 
-		struct servent* pSent = NULL;
-		sockaddr_in saServer;
-
-		pSent = getservbyname("http","tcp");
-
-		if (pSent == NULL)
-			saServer.sin_port = htons(80);
-		else
-			saServer.sin_port = pSent->s_port;
-
-		saServer.sin_family = AF_INET;
-		saServer.sin_addr = *((LPIN_ADDR) *pHent -> h_addr_list);
-
-		wsint = connect(Socket, (LPSOCKADDR)&saServer, sizeof(SOCKADDR_IN));
+		wsint = connect(Socket, (LPSOCKADDR)&saServer, sizeof(saServer));
 		if (wsint == SOCKET_ERROR)
 		{
 			closesocket(Socket);
